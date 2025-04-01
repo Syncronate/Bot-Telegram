@@ -23,14 +23,30 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Sheet Check Script
-        env:
-          # Mappa i Secrets di GitHub alle variabili d'ambiente
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON_CONTENT }}
-          GSHEET_NAME: ${{ secrets.GSHEET_NAME }} # Assicurati sia impostato nei secrets
-          WORKSHEET_NAME: ${{ secrets.WORKSHEET_NAME }} # Assicurati sia impostato nei secrets
-          # Mappa il JSON delle soglie dal secret
-          THRESHOLDS_JSON: ${{ secrets.THRESHOLDS_JSON }}
-        run: python tuo_script_bot.py # Esegui lo script Python principale
+        - name: Run Sheet Check Script
+    env:
+      # Mappa i Secrets di GitHub alle variabili d'ambiente
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      GOOGLE_CREDENTIALS_JSON_CONTENT: ${{ secrets.GOOGLE_CREDENTIALS_JSON }} # NOME VARIABILE CON _CONTENT
+      GSHEET_NAME: ${{ secrets.GSHEET_NAME }}
+      WORKSHEET_NAME: ${{ secrets.WORKSHEET_NAME }}
+      THRESHOLDS_JSON: ${{ secrets.THRESHOLDS_JSON }}
+    run: |
+      echo "--- Debugging Environment Variables ---"
+      echo "Checking GOOGLE_CREDENTIALS_JSON_CONTENT..."
+      # Controlla se la variabile è impostata e non è vuota usando bash
+      if [ -z "$GOOGLE_CREDENTIALS_JSON_CONTENT" ]; then
+        echo "!!! ERROR: GOOGLE_CREDENTIALS_JSON_CONTENT is NOT set or is EMPTY in the shell environment !!!"
+        # Puoi anche listare tutte le variabili per vedere cosa c'è (attenzione se hai altri dati sensibili)
+        # echo "--- All Environment Variables ---"
+        # printenv | sort
+        # echo "-------------------------------"
+        exit 1 # Fallisce lo step se la variabile è vuota
+      else
+        echo "OK: GOOGLE_CREDENTIALS_JSON_CONTENT seems to be set in the shell environment."
+        # Non stampare il contenuto per sicurezza
+        # echo "First 10 chars: ${GOOGLE_CREDENTIALS_JSON_CONTENT:0:10}"
+      fi
+      echo "--- Attempting to Run Python Script ---"
+      python tuo_script_bot.py
