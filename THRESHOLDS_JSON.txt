@@ -1,0 +1,17 @@
+{
+  "Arcevia - Intensita di pioggia (mm/min)": 0.5,
+  "Arcevia - Pioggia TOT Oggi (mm)": 15.0,
+  "Arcevia - Temperatura Aria (C)": 28.0,
+  "Arcevia - Umidita Relativa (%)": 95.0,
+  "Barbara - Intensita di pioggia (mm/min)": 0.6,
+  "Barbara - Pioggia TOT Oggi (mm)": 12.0,
+  "Corinaldo - Pioggia TOT Oggi (mm)": 10.0,
+  "Corinaldo - Temperatura Aria (C)": 27.5,
+  "Misa - Livello Misa (mt)": 1.8,
+  "Misa - Pioggia TOT Oggi (mm)": 5.0,
+  "Nevola - Livello Nevola (mt)": 1.5,
+  "Pianello di Ostra - Livello Misa (m)": 1.0,
+  "Ponte Garibaldi - Livello Misa 2 (mt)": 0.8,
+  "Serra dei Conti - Livello Misa (mt)": 1.1,
+  "Umidita' Sensore 3452 (Montemurello)": 90.0
+}
