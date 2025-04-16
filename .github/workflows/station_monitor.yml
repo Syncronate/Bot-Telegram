@@ -30,7 +30,7 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         # Assicurati che il nome file sia corretto
-        run: python station_checker.py
+        run: python station_checker_full_report.py
 
       - name: Check script execution status
         if: failure()
