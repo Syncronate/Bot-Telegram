@@ -4,7 +4,7 @@ on:
   schedule:
     # Esegue ogni giorno alle 06:00 UTC (corrisponde alle 08:00 ora legale italiana, 07:00 ora solare)
     # Modifica l'orario se necessario (es. '0 16 * * *' per le 18:00 italiane estive)
-    - cron: '0 6 * * *'
+    - cron: '0 12 * * *'
   workflow_dispatch: # Permette l'avvio manuale
 
 jobs:
