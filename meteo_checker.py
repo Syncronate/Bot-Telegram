@@ -35,7 +35,7 @@ DESCRIZIONI_SENSORI = {
 # 1. Soglie Generiche (Default per tipo sensore, se non specificato diversamente)
 SOGLIE_GENERICHE = {
     0: 5.0,   # Pioggia TOT Oggi in mm (default)
-    1: 0.25
+    1: 0.25,
     5: 35.0,   # Temperatura in °C (default)
     10: 15.0,  # Velocità Vento in m/s (default)
     # NON mettiamo una soglia generica per 100/101, perché varia troppo
