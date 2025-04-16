@@ -3,7 +3,7 @@ import os
 import json
 import logging
 from datetime import datetime
-import certifi # <-- AGGIUNGI QUESTO IMPORT
+import urllib3 # Importa urllib3 per disabilitare gli avvisi
 
 # --- Configurazione ---
 # Recupera le credenziali dai secrets di GitHub Actions
@@ -24,30 +24,17 @@ STAZIONI_INTERESSATE = [
     "Misa", "Pianello di Ostra", "Nevola", "Barbara",
     "Serra dei Conti", "Arcevia", "Corinaldo", "Ponte Garibaldi",
 ]
-# Assicurati che il codice per Arcevia sia quello corretto se ci sono duplicati
 CODICE_ARCEVIA_CORRETTO = 732
-
-# Tipi Sensore di interesse (Assumiamo 0 = Pioggia TOT Oggi basato sull'esempio)
-# Verifica se il tipoSens 5 (Temperatura) o altri sono necessari per le soglie
 SENSORI_INTERESSATI_TIPOSENS = [0, 1, 5, 6, 9, 10, 100, 101]
 
-# Mappa descrizioni leggibili per tipoSens (Opzionale ma utile per i messaggi)
 DESCRIZIONI_SENSORI = {
-    0: "Pioggia TOT Oggi",
-    1: "Intensità Pioggia",
-    5: "Temperatura Aria",
-    6: "Umidità Relativa",
-    8: "Pressione Atmosferica",
-    9: "Direzione Vento",
-    10: "Velocità Vento",
-    100: "Livello Idrometrico", # Potrebbe essere specifico del fiume
-    101: "Livello Idrometrico 2", # Potrebbe essere specifico del fiume
-    7: "Radiazione Globale",
-    107: "Livello Neve"
+    0: "Pioggia TOT Oggi", 1: "Intensità Pioggia", 5: "Temperatura Aria",
+    6: "Umidità Relativa", 8: "Pressione Atmosferica", 9: "Direzione Vento",
+    10: "Velocità Vento", 100: "Livello Idrometrico", 101: "Livello Idrometrico 2",
+    7: "Radiazione Globale", 107: "Livello Neve"
 }
 
 # Soglie per i sensori (tipoSens -> valore soglia)
-# Esempio: Notifica se Pioggia TOT Oggi (0) > 50mm o Temperatura (5) > 35°C
 SOGLIE_SENSORI = {
     0: 50.0,   # Pioggia TOT Oggi in mm
     5: 35.0,   # Temperatura in °C
@@ -59,37 +46,43 @@ SOGLIE_SENSORI = {
 # Configurazione Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# --- DISABILITA AVVISI SSL ---
+# Sopprime gli avvisi InsecureRequestWarning quando verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# --- FINE DISABILITAZIONE AVVISI ---
+
+
 # --- Funzioni Helper ---
 
 def fetch_data(url):
-    """Recupera dati JSON da un URL con User-Agent, certifi e logging migliorato."""
+    """Recupera dati JSON da un URL DISABILITANDO la verifica SSL."""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
+    response = None # Inizializza response a None
     try:
-        # Aggiungi verify=certifi.where()
+        # --- VERIFICA SSL DISABILITATA ---
+        logging.warning(f"Tentativo di richiesta a {url} con VERIFICA SSL DISABILITATA (verify=False).")
         response = requests.get(url, headers=headers, timeout=45, verify=False)
-        import urllib3
-        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) # Sopprime gli avvisi
-        logging.info(f"Richiesta a {url} - Status Code: {response.status_code}")
-        response.raise_for_status()
+        # --- FINE VERIFICA SSL DISABILITATA ---
+
+        logging.info(f"Richiesta a {url} - Status Code: {response.status_code}") # Logga sempre lo status code
+        response.raise_for_status()  # Solleva eccezione per errori HTTP (4xx o 5xx)
         return response.json()
-    # ... (il resto della gestione errori rimane uguale) ...
     except requests.exceptions.Timeout as e:
         logging.error(f"Timeout durante la richiesta a {url}: {e}")
         return None
     except requests.exceptions.HTTPError as e:
-        logging.error(f"Errore HTTP durante la richiesta a {url}: {e.response.status_code} - {e.response.text[:200]}...")
+        resp_text = e.response.text[:200] if e.response else "N/A"
+        logging.error(f"Errore HTTP durante la richiesta a {url}: {e.response.status_code} - {resp_text}...") # Logga codice e parte della risposta
         return None
-            except requests.exceptions.ConnectionError as e:
-             # Controlla se l'errore è specificamente un SSLError o contiene il testo di verifica
-             # La classe base per SSLError in requests è requests.exceptions.SSLError
-             if isinstance(e, requests.exceptions.SSLError) or 'CERTIFICATE_VERIFY_FAILED' in str(e):
-                logging.error(f"Errore SSL persistente durante richiesta a {url}: {e}")
-             else:
-                logging.error(f"Errore di connessione generico durante richiesta a {url}: {e}")
-             return None
+    except requests.exceptions.ConnectionError as e:
+         # La verifica SSL è disabilitata, quindi gli errori SSL non dovrebbero verificarsi qui,
+         # ma controlliamo comunque altri errori di connessione.
+         logging.error(f"Errore di connessione durante richiesta a {url}: {e}")
+         return None
     except requests.exceptions.RequestException as e:
+        # Errore generico di requests
         logging.error(f"Errore generico durante la richiesta a {url}: {e}")
         return None
     except json.JSONDecodeError as e:
@@ -99,7 +92,8 @@ def fetch_data(url):
         logging.error(f"Errore nel decodificare JSON da {url}. Status: {resp_status}. Risposta (primi 200 char): '{resp_text}...' Errore: {e}")
         return None
     except Exception as e:
-        logging.error(f"Errore imprevisto durante il fetch da {url}: {e}", exc_info=True)
+        # Cattura qualsiasi altra eccezione imprevista
+        logging.error(f"Errore imprevisto durante il fetch da {url}: {e}", exc_info=True) # Aggiunge traceback per debug
         return None
 
 def send_telegram_message(token, chat_id, text):
@@ -107,17 +101,16 @@ def send_telegram_message(token, chat_id, text):
     if not token or not chat_id:
         logging.error("Token Telegram o Chat ID non configurati.")
         return False
-    # Limita la lunghezza del messaggio per evitare errori API Telegram
     max_length = 4096
     if len(text) > max_length:
         logging.warning(f"Messaggio troppo lungo ({len(text)} caratteri), troncato a {max_length}.")
-        text = text[:max_length - 3] + "..." # Tronca e aggiunge puntini
+        text = text[:max_length - 3] + "..."
 
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {
         'chat_id': chat_id,
         'text': text,
-        'parse_mode': 'Markdown' # Opzionale: per usare formattazione come *bold* o _italic_
+        'parse_mode': 'Markdown'
     }
     try:
         response = requests.post(url, data=payload, timeout=15)
@@ -126,7 +119,6 @@ def send_telegram_message(token, chat_id, text):
         return True
     except requests.exceptions.RequestException as e:
         logging.error(f"Errore durante l'invio del messaggio Telegram: {e}")
-        # Logga anche la risposta se disponibile per debug
         if e.response is not None:
             logging.error(f"Risposta API Telegram: {e.response.status_code} - {e.response.text}")
         return False
@@ -135,41 +127,30 @@ def formatta_evento_allerta(evento_str):
     """Formatta la stringa evento:colore in modo leggibile."""
     try:
         nome, colore = evento_str.split(':')
-        # Mappa colori a emoji o testo (opzionale)
-        emoji_map = {
-            "yellow": "🟡",
-            "orange": "🟠",
-            "red": "🔴",
-            # "green": "🟢", # Ignorati
-            # "white": "⚪️" # Ignorati
-        }
-        # Sostituisci underscore con spazi e capitalizza
+        emoji_map = {"yellow": "🟡", "orange": "🟠", "red": "🔴"}
         nome_formattato = nome.replace("_", " ").capitalize()
         if colore in emoji_map:
             return f"{emoji_map[colore]} {nome_formattato} ({colore})"
         elif colore not in LIVELLI_ALLERTA_IGNORATI:
-             return f"❓ {nome_formattato} ({colore})" # Colore sconosciuto ma non ignorato
+             return f"❓ {nome_formattato} ({colore})"
         else:
             return None # Ignora green/white
     except ValueError:
-        return f"Evento malformato: {evento_str}" # Gestisce casi imprevisti
+        return f"Evento malformato: {evento_str}"
 
 # --- Logica Principale ---
 
 def check_allerte():
     """Controlla le API di allerta e restituisce un messaggio se ci sono allerte rilevanti."""
     messaggi_allerta = []
-    urls_allerte = {
-        "OGGI": URL_ALLERTA_OGGI,
-        "DOMANI": URL_ALLERTA_DOMANI
-    }
+    urls_allerte = {"OGGI": URL_ALLERTA_OGGI, "DOMANI": URL_ALLERTA_DOMANI}
 
     for tipo_giorno, url in urls_allerte.items():
         logging.info(f"Controllo allerte {tipo_giorno} da {url}...")
         data = fetch_data(url)
-        if not data:
+        if data is None: # Modificato controllo per gestire None esplicitamente
             messaggi_allerta.append(f"⚠️ Impossibile recuperare dati allerta {tipo_giorno}.")
-            continue
+            continue # Passa al prossimo URL
 
         allerte_rilevanti_giorno = []
         for item in data:
@@ -184,7 +165,7 @@ def check_allerte():
                     if evento_formattato:
                         eventi_formattati_area.append(evento_formattato)
 
-                if eventi_formattati_area: # Se ci sono eventi NON green/white per quest'area
+                if eventi_formattati_area:
                      allerte_rilevanti_giorno.append(f"  - *Area {area}*:\n    " + "\n    ".join(eventi_formattati_area))
 
         if allerte_rilevanti_giorno:
@@ -199,7 +180,7 @@ def check_stazioni():
     messaggi_soglia = []
     logging.info(f"Controllo dati stazioni da {URL_STAZIONI}...")
     data = fetch_data(URL_STAZIONI)
-    if not data:
+    if data is None: # Modificato controllo per gestire None esplicitamente
         return "⚠️ Impossibile recuperare dati stazioni meteo."
 
     stazioni_trovate_interessanti = False
@@ -207,7 +188,6 @@ def check_stazioni():
         nome_stazione = stazione.get("nome", "N/A").strip()
         codice_stazione = stazione.get("codice")
 
-        # Gestione caso speciale Arcevia e filtro per nome
         is_arcevia = "Arcevia" in nome_stazione
         if (is_arcevia and codice_stazione == CODICE_ARCEVIA_CORRETTO) or \
            (not is_arcevia and nome_stazione in STAZIONI_INTERESSATE):
@@ -230,11 +210,9 @@ def check_stazioni():
 
                     logging.debug(f"  - Sensore: {descr_sens} ({tipoSens}), Valore: {valore_str} {unmis}, Aggiorn.: {last_update}")
 
-                    # Controllo Soglie
                     if tipoSens in SOGLIE_SENSORI:
                         soglia = SOGLIE_SENSORI[tipoSens]
                         try:
-                            # Gestisce valori non numerici o nulli
                             if valore_str is not None and valore_str != "" and valore_str.lower() != 'nan':
                                 valore_num = float(valore_str)
                                 if valore_num > soglia:
@@ -267,20 +245,15 @@ if __name__ == "__main__":
         logging.critical("Errore: Le variabili d'ambiente TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID sono necessarie.")
         exit(1) # Esce con errore
 
-    # Controlla Allerete
     messaggio_finale_allerte = check_allerte()
-
-    # Controlla Stazioni e Soglie
     messaggio_finale_soglie = check_stazioni()
 
-    # Combina i messaggi se ci sono contenuti
     messaggio_completo = ""
     if messaggio_finale_allerte:
-        messaggio_completo += messaggio_finale_allerte + "\n\n" # Aggiunge separatore
+        messaggio_completo += messaggio_finale_allerte + "\n\n"
     if messaggio_finale_soglie:
         messaggio_completo += messaggio_finale_soglie
 
-    # Invia il messaggio a Telegram solo se c'è qualcosa da riportare
     if messaggio_completo:
         timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         header = f"*{'='*10} Report Meteo Marche ({timestamp}) {'='*10}*\n\n"
