@@ -34,7 +34,8 @@ DESCRIZIONI_SENSORI = {
 
 # 1. Soglie Generiche (Default per tipo sensore, se non specificato diversamente)
 SOGLIE_GENERICHE = {
-    0: 50.0,   # Pioggia TOT Oggi in mm (default)
+    0: 5.0,   # Pioggia TOT Oggi in mm (default)
+    1: 0.25
     5: 35.0,   # Temperatura in °C (default)
     10: 15.0,  # Velocità Vento in m/s (default)
     # NON mettiamo una soglia generica per 100/101, perché varia troppo
@@ -45,7 +46,7 @@ SOGLIE_GENERICHE = {
 #    Assicurati che i nomi stazione qui corrispondano ESATTAMENTE a quelli in STAZIONI_INTERESSATE
 SOGLIE_PER_STAZIONE = {
     "Nevola": {
-        100: 2.0,  # Livello Idrometrico (tipoSens 100) specifico per Nevola
+        100: 1.0,  # Livello Idrometrico (tipoSens 100) specifico per Nevola
         0: 60.0    # Esempio: Pioggia (tipoSens 0) specifica per Nevola (sovrascrive 50.0 generico)
     },
     "Misa": {
