@@ -68,7 +68,9 @@ def fetch_data(url):
     }
     try:
         # Aggiungi verify=certifi.where()
-        response = requests.get(url, headers=headers, timeout=45, verify=false) # <-- MODIFICA QUI
+        response = requests.get(url, headers=headers, timeout=45, verify=False)
+        import urllib3
+        urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning) # Sopprime gli avvisi
         logging.info(f"Richiesta a {url} - Status Code: {response.status_code}")
         response.raise_for_status()
         return response.json()
@@ -79,13 +81,14 @@ def fetch_data(url):
     except requests.exceptions.HTTPError as e:
         logging.error(f"Errore HTTP durante la richiesta a {url}: {e.response.status_code} - {e.response.text[:200]}...")
         return None
-    except requests.exceptions.ConnectionError as e:
-         # Controlla se l'errore è ancora SSL
-         if isinstance(e.args[0], javax.net.ssl.SSLError) or 'CERTIFICATE_VERIFY_FAILED' in str(e): # Adattato per possibile struttura errore requests/urllib3
-            logging.error(f"Errore SSL persistente con certifi durante richiesta a {url}: {e}")
-         else:
-            logging.error(f"Errore di connessione generico durante richiesta a {url}: {e}")
-         return None
+            except requests.exceptions.ConnectionError as e:
+             # Controlla se l'errore è specificamente un SSLError o contiene il testo di verifica
+             # La classe base per SSLError in requests è requests.exceptions.SSLError
+             if isinstance(e, requests.exceptions.SSLError) or 'CERTIFICATE_VERIFY_FAILED' in str(e):
+                logging.error(f"Errore SSL persistente durante richiesta a {url}: {e}")
+             else:
+                logging.error(f"Errore di connessione generico durante richiesta a {url}: {e}")
+             return None
     except requests.exceptions.RequestException as e:
         logging.error(f"Errore generico durante la richiesta a {url}: {e}")
         return None
