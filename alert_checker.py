@@ -15,13 +15,10 @@ URL_ALLERTA_OGGI = "https://allertameteo.regione.marche.it/o/api/allerta/get-sta
 AREE_INTERESSATE_ALLERTE = ["2", "4"]
 LIVELLI_ALLERTA_IGNORATI = ["green", "white"]
 
-# Configurazione Logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-
-# Disabilita avvisi SSL per verify=False
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- Funzioni Helper (Copiate da meteo_checker.py) ---
+# --- Funzioni Helper (Invariate dalla versione precedente) ---
 
 def fetch_data(url):
     """Recupera dati JSON da un URL DISABILITANDO la verifica SSL."""
@@ -66,7 +63,6 @@ def send_telegram_message(token, chat_id, text):
     if len(text) > max_length:
         logging.warning(f"Messaggio troppo lungo ({len(text)} caratteri), troncato a {max_length}.")
         text = text[:max_length - 3] + "..."
-
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {'chat_id': chat_id, 'text': text, 'parse_mode': 'Markdown'}
     try:
@@ -90,39 +86,48 @@ def formatta_evento_allerta(evento_str):
         else: return None
     except ValueError: return f"Evento malformato: {evento_str}"
 
-# --- Logica Principale Solo Allerte ---
+# --- Logica Principale Solo Allerte (Invariata) ---
 
 def check_allerte_principale():
-    """Controlla le API di allerta e restituisce un messaggio se ci sono allerte rilevanti."""
+    """Controlla le API di allerta e restituisce un messaggio se ci sono allerte rilevanti o errore fetch."""
     messaggi_allerta = []
     urls_allerte = {"OGGI": URL_ALLERTA_OGGI, "DOMANI": URL_ALLERTA_DOMANI}
+    fetch_fallito = False # Flag per tracciare fallimenti fetch
 
     for tipo_giorno, url in urls_allerte.items():
         logging.info(f"Controllo allerte {tipo_giorno} da {url}...")
         data = fetch_data(url)
         if data is None:
             messaggi_allerta.append(f"⚠️ Impossibile recuperare dati allerta {tipo_giorno}.")
-            continue
+            fetch_fallito = True # Segna che almeno un fetch è fallito
+            continue # Passa al prossimo giorno
 
+        # Se il fetch è riuscito, processa i dati
         allerte_rilevanti_giorno = []
         for item in data:
             area = item.get("area")
             eventi_str = item.get("eventi")
             if area in AREE_INTERESSATE_ALLERTE and eventi_str:
                 eventi_list = eventi_str.split(',')
-                # Usa list comprehension per creare la lista formattata
                 eventi_formattati_area = [fmt for ev in eventi_list if (fmt := formatta_evento_allerta(ev.strip()))]
                 if eventi_formattati_area:
                      allerte_rilevanti_giorno.append(f"  - *Area {area}*:\n    " + "\n    ".join(eventi_formattati_area))
 
         if allerte_rilevanti_giorno:
-             messaggi_allerta.append(f"🚨 *Allerte Meteo {tipo_giorno}:*\n" + "\n".join(allerte_rilevanti_giorno))
-        else:
-             logging.info(f"Nessuna allerta meteo rilevante trovata per {tipo_giorno} nelle aree {AREE_INTERESSATE_ALLERTE}.")
+             messaggi_allerta.append(f"🚨 *Allerte Meteo RILEVANTI {tipo_giorno}:*\n" + "\n".join(allerte_rilevanti_giorno))
+        # Non aggiungiamo nulla se non ci sono allerte rilevanti per questo giorno
 
-    return "\n\n".join(messaggi_allerta) if messaggi_allerta else ""
+    # Se c'è stato un fallimento nel fetch, restituisci solo i messaggi di errore/allerta
+    if fetch_fallito:
+        return "\n\n".join(messaggi_allerta) # Conterrà gli errori e eventuali allerte dell'altro giorno
+    # Se non ci sono stati fallimenti e non ci sono messaggi di allerta rilevanti, restituisci stringa vuota
+    elif not messaggi_allerta:
+        return ""
+    # Altrimenti (nessun fallimento, allerte rilevanti trovate), restituisci i messaggi di allerta
+    else:
+        return "\n\n".join(messaggi_allerta)
 
-# --- Esecuzione Script Allerte ---
+# --- Esecuzione Script Allerte (MODIFICATA) ---
 if __name__ == "__main__":
     logging.info("--- Avvio Controllo SOLO ALLERTE Meteo Marche ---")
 
@@ -130,17 +135,43 @@ if __name__ == "__main__":
         logging.critical("Errore: Le variabili d'ambiente TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID sono necessarie.")
         exit(1)
 
+    # Esegui il check
     messaggio_allerte = check_allerte_principale()
 
-    if messaggio_allerte:
-        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-        header = f"*{'='*5} Report SOLO ALLERTE ({timestamp}) {'='*5}*\n\n"
-        footer = f"\n\n*{'='*30}*"
-        messaggio_da_inviare = header + messaggio_allerte.strip() + footer
+    # Prepara il messaggio finale per Telegram
+    messaggio_da_inviare = ""
+    timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+    footer = f"\n\n*{'='*30}*" # Footer comune
 
-        logging.info("Invio messaggio allerte a Telegram...")
+    # Caso 1: Ci sono messaggi (allerte rilevanti o errori fetch)
+    if messaggio_allerte:
+        # Controlla se è un messaggio di errore fetch (contiene l'emoji ⚠️)
+        if "⚠️" in messaggio_allerte:
+             header = f"*{'='*5} ERRORE Recupero Allerte ({timestamp}) {'='*5}*\n\n"
+             messaggio_da_inviare = header + messaggio_allerte.strip() + footer
+             logging.error(f"Errore recupero dati allerte rilevato: {messaggio_allerte}")
+        else:
+             # È un messaggio di allerte rilevanti
+             header = f"*{'='*5} Report SOLO ALLERTE RILEVANTI ({timestamp}) {'='*5}*\n\n"
+             messaggio_da_inviare = header + messaggio_allerte.strip() + footer
+             logging.info("Trovate allerte rilevanti da notificare.")
+
+    # Caso 2: messaggio_allerte è vuoto (fetch OK, nessuna allerta rilevante)
+    else:
+        header = f"*{'='*5} Report SOLO ALLERTE ({timestamp}) {'='*5}*\n\n"
+        testo_ok = (f"✅ Nessuna allerta meteo rilevante (diversa da verde/bianco) "
+                    f"prevista per oggi e domani nelle aree monitorate "
+                    f"({', '.join(AREE_INTERESSATE_ALLERTE)}).")
+        messaggio_da_inviare = header + testo_ok + footer
+        logging.info("Nessuna allerta meteo rilevante trovata (fetch OK). Invio messaggio di stato OK.")
+
+    # Invia il messaggio preparato (errore, allerta, o "tutto ok")
+    # Il controllo if messaggio_da_inviare previene invii se per qualche motivo non è stato preparato
+    if messaggio_da_inviare:
+        logging.info("Invio messaggio stato allerte a Telegram...")
         send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, messaggio_da_inviare)
     else:
-        logging.info("Nessuna allerta meteo rilevante da notificare.")
+         # Questo non dovrebbe accadere con la logica attuale, ma è una sicurezza
+         logging.warning("Nessun messaggio da inviare è stato preparato per Telegram.")
 
     logging.info("--- Controllo SOLO ALLERTE Meteo Marche completato ---")
