@@ -27,15 +27,15 @@ DESCRIZIONI_SENSORI = {
 
 # Soglie Generiche (Default)
 SOGLIE_GENERICHE = {
-    0: 50.0, 5: 35.0, 10: 15.0,
+    0: 5.0, 5: 35.0, 10: 15.0, 1: 0.25,
 }
 
 # Soglie Specifiche per Stazione
 SOGLIE_PER_STAZIONE = {
-    "Nevola": { 100: 2.0, 0: 60.0 },
+    "Nevola": { 100: 1.0 },
     "Misa": { 100: 3.5 },
     "Ponte Garibaldi": { 101: 1.5 },
-    "Arcevia": { 5: 32.0, 100: 1.8 },
+    "Arcevia": { 100: 1.8 },
     "Serra dei Conti": { 100: 1.2 }
 }
 
