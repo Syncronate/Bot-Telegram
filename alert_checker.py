@@ -1,0 +1,146 @@
+import requests
+import os
+import json
+import logging
+from datetime import datetime
+import urllib3
+
+# --- Configurazione Allerte ---
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
+URL_ALLERTA_DOMANI = "https://allertameteo.regione.marche.it/o/api/allerta/get-stato-allerta-domani"
+URL_ALLERTA_OGGI = "https://allertameteo.regione.marche.it/o/api/allerta/get-stato-allerta"
+
+AREE_INTERESSATE_ALLERTE = ["2", "4"]
+LIVELLI_ALLERTA_IGNORATI = ["green", "white"]
+
+# Configurazione Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# Disabilita avvisi SSL per verify=False
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# --- Funzioni Helper (Copiate da meteo_checker.py) ---
+
+def fetch_data(url):
+    """Recupera dati JSON da un URL DISABILITANDO la verifica SSL."""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
+    response = None
+    try:
+        logging.warning(f"Tentativo di richiesta ALLERTE a {url} con VERIFICA SSL DISABILITATA (verify=False).")
+        response = requests.get(url, headers=headers, timeout=45, verify=False)
+        logging.info(f"Richiesta ALLERTE a {url} - Status Code: {response.status_code}")
+        response.raise_for_status()
+        return response.json()
+    except requests.exceptions.Timeout as e:
+        logging.error(f"Timeout durante la richiesta ALLERTE a {url}: {e}")
+        return None
+    except requests.exceptions.HTTPError as e:
+        resp_text = e.response.text[:200] if e.response else "N/A"
+        logging.error(f"Errore HTTP durante la richiesta ALLERTE a {url}: {e.response.status_code} - {resp_text}...")
+        return None
+    except requests.exceptions.ConnectionError as e:
+         logging.error(f"Errore di connessione durante richiesta ALLERTE a {url}: {e}")
+         return None
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Errore generico durante la richiesta ALLERTE a {url}: {e}")
+        return None
+    except json.JSONDecodeError as e:
+        resp_text = response.text[:200] if response else "N/A"
+        resp_status = response.status_code if response else "N/A"
+        logging.error(f"Errore nel decodificare JSON ALLERTE da {url}. Status: {resp_status}. Risposta (primi 200 char): '{resp_text}...' Errore: {e}")
+        return None
+    except Exception as e:
+        logging.error(f"Errore imprevisto durante il fetch ALLERTE da {url}: {e}", exc_info=True)
+        return None
+
+def send_telegram_message(token, chat_id, text):
+    """Invia un messaggio a una chat Telegram."""
+    if not token or not chat_id:
+        logging.error("Token Telegram o Chat ID non configurati.")
+        return False
+    max_length = 4096
+    if len(text) > max_length:
+        logging.warning(f"Messaggio troppo lungo ({len(text)} caratteri), troncato a {max_length}.")
+        text = text[:max_length - 3] + "..."
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {'chat_id': chat_id, 'text': text, 'parse_mode': 'Markdown'}
+    try:
+        response = requests.post(url, data=payload, timeout=15)
+        response.raise_for_status()
+        logging.info(f"Messaggio inviato con successo a chat ID {chat_id}")
+        return True
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Errore durante l'invio del messaggio Telegram: {e}")
+        if e.response is not None: logging.error(f"Risposta API Telegram: {e.response.status_code} - {e.response.text}")
+        return False
+
+def formatta_evento_allerta(evento_str):
+    """Formatta la stringa evento:colore in modo leggibile."""
+    try:
+        nome, colore = evento_str.split(':')
+        emoji_map = {"yellow": "🟡", "orange": "🟠", "red": "🔴"}
+        nome_formattato = nome.replace("_", " ").capitalize()
+        if colore in emoji_map: return f"{emoji_map[colore]} {nome_formattato} ({colore})"
+        elif colore not in LIVELLI_ALLERTA_IGNORATI: return f"❓ {nome_formattato} ({colore})"
+        else: return None
+    except ValueError: return f"Evento malformato: {evento_str}"
+
+# --- Logica Principale Solo Allerte ---
+
+def check_allerte_principale():
+    """Controlla le API di allerta e restituisce un messaggio se ci sono allerte rilevanti."""
+    messaggi_allerta = []
+    urls_allerte = {"OGGI": URL_ALLERTA_OGGI, "DOMANI": URL_ALLERTA_DOMANI}
+
+    for tipo_giorno, url in urls_allerte.items():
+        logging.info(f"Controllo allerte {tipo_giorno} da {url}...")
+        data = fetch_data(url)
+        if data is None:
+            messaggi_allerta.append(f"⚠️ Impossibile recuperare dati allerta {tipo_giorno}.")
+            continue
+
+        allerte_rilevanti_giorno = []
+        for item in data:
+            area = item.get("area")
+            eventi_str = item.get("eventi")
+            if area in AREE_INTERESSATE_ALLERTE and eventi_str:
+                eventi_list = eventi_str.split(',')
+                # Usa list comprehension per creare la lista formattata
+                eventi_formattati_area = [fmt for ev in eventi_list if (fmt := formatta_evento_allerta(ev.strip()))]
+                if eventi_formattati_area:
+                     allerte_rilevanti_giorno.append(f"  - *Area {area}*:\n    " + "\n    ".join(eventi_formattati_area))
+
+        if allerte_rilevanti_giorno:
+             messaggi_allerta.append(f"🚨 *Allerte Meteo {tipo_giorno}:*\n" + "\n".join(allerte_rilevanti_giorno))
+        else:
+             logging.info(f"Nessuna allerta meteo rilevante trovata per {tipo_giorno} nelle aree {AREE_INTERESSATE_ALLERTE}.")
+
+    return "\n\n".join(messaggi_allerta) if messaggi_allerta else ""
+
+# --- Esecuzione Script Allerte ---
+if __name__ == "__main__":
+    logging.info("--- Avvio Controllo SOLO ALLERTE Meteo Marche ---")
+
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logging.critical("Errore: Le variabili d'ambiente TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID sono necessarie.")
+        exit(1)
+
+    messaggio_allerte = check_allerte_principale()
+
+    if messaggio_allerte:
+        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        header = f"*{'='*5} Report SOLO ALLERTE ({timestamp}) {'='*5}*\n\n"
+        footer = f"\n\n*{'='*30}*"
+        messaggio_da_inviare = header + messaggio_allerte.strip() + footer
+
+        logging.info("Invio messaggio allerte a Telegram...")
+        send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, messaggio_da_inviare)
+    else:
+        logging.info("Nessuna allerta meteo rilevante da notificare.")
+
+    logging.info("--- Controllo SOLO ALLERTE Meteo Marche completato ---")
