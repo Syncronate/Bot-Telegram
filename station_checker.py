@@ -33,10 +33,10 @@ SOGLIE_GENERICHE = {
 # Soglie Specifiche per Stazione
 SOGLIE_PER_STAZIONE = {
     "Nevola": { 100: 1.0 },
-    "Misa": { 100: 3.5 },
-    "Ponte Garibaldi": { 101: 1.5 },
+    "Misa": { 100: 1 },
+    "Ponte Garibaldi": { 101: 0 },
     "Arcevia": { 100: 1.8 },
-    "Serra dei Conti": { 100: 1.2 }
+    "Serra dei Conti": { 100: 0.5 }
 }
 
 # Configurazione Logging
