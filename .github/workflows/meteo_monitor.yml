@@ -28,13 +28,10 @@ jobs:
           # sudo apt-get install -y ca-certificates --reinstall
         # Potrebbe non essere necessario sudo a seconda dei permessi del runner, ma è più sicuro includerlo.
 
-      - name: Install dependencies
+            - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          # Se usi requirements.txt:
-          # pip install -r requirements.txt
-          # Altrimenti (come prima):
-          pip install requests
+          pip install requests certifi # Aggiungi certifi qui
 
       - name: Run Meteo Check Script
         env:
