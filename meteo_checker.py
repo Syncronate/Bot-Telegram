@@ -61,16 +61,35 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Funzioni Helper ---
 
 def fetch_data(url):
-    """Recupera dati JSON da un URL."""
+    """Recupera dati JSON da un URL con User-Agent e logging migliorato."""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    }
     try:
-        response = requests.get(url, timeout=30) # Timeout di 30 secondi
+        # Aumentato leggermente il timeout a 45 secondi
+        response = requests.get(url, headers=headers, timeout=45)
+        logging.info(f"Richiesta a {url} - Status Code: {response.status_code}") # Logga sempre lo status code
         response.raise_for_status()  # Solleva eccezione per errori HTTP (4xx o 5xx)
         return response.json()
+    except requests.exceptions.Timeout as e:
+        logging.error(f"Timeout durante la richiesta a {url}: {e}")
+        return None
+    except requests.exceptions.HTTPError as e:
+        logging.error(f"Errore HTTP durante la richiesta a {url}: {e.response.status_code} - {e.response.text[:200]}...") # Logga codice e parte della risposta
+        return None
+    except requests.exceptions.ConnectionError as e:
+        logging.error(f"Errore di connessione durante la richiesta a {url}: {e}")
+        return None
     except requests.exceptions.RequestException as e:
-        logging.error(f"Errore durante la richiesta a {url}: {e}")
+        # Errore generico di requests
+        logging.error(f"Errore generico durante la richiesta a {url}: {e}")
         return None
     except json.JSONDecodeError as e:
-        logging.error(f"Errore nel decodificare JSON da {url}: {e}")
+        logging.error(f"Errore nel decodificare JSON da {url}. Status: {response.status_code}. Risposta ricevuta (primi 200 char): '{response.text[:200]}...' Errore: {e}")
+        return None
+    except Exception as e:
+        # Cattura qualsiasi altra eccezione imprevista
+        logging.error(f"Errore imprevisto durante il fetch da {url}: {e}", exc_info=True) # Aggiunge traceback per debug
         return None
 
 def send_telegram_message(token, chat_id, text):
