@@ -68,7 +68,7 @@ def fetch_data(url):
     }
     try:
         # Aggiungi verify=certifi.where()
-        response = requests.get(url, headers=headers, timeout=45, verify=certifi.where()) # <-- MODIFICA QUI
+        response = requests.get(url, headers=headers, timeout=45, verify=false) # <-- MODIFICA QUI
         logging.info(f"Richiesta a {url} - Status Code: {response.status_code}")
         response.raise_for_status()
         return response.json()
