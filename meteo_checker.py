@@ -3,6 +3,7 @@ import os
 import json
 import logging
 from datetime import datetime
+import certifi # <-- AGGIUNGI QUESTO IMPORT
 
 # --- Configurazione ---
 # Recupera le credenziali dai secrets di GitHub Actions
@@ -61,35 +62,41 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 # --- Funzioni Helper ---
 
 def fetch_data(url):
-    """Recupera dati JSON da un URL con User-Agent e logging migliorato."""
+    """Recupera dati JSON da un URL con User-Agent, certifi e logging migliorato."""
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
     }
     try:
-        # Aumentato leggermente il timeout a 45 secondi
-        response = requests.get(url, headers=headers, timeout=45)
-        logging.info(f"Richiesta a {url} - Status Code: {response.status_code}") # Logga sempre lo status code
-        response.raise_for_status()  # Solleva eccezione per errori HTTP (4xx o 5xx)
+        # Aggiungi verify=certifi.where()
+        response = requests.get(url, headers=headers, timeout=45, verify=certifi.where()) # <-- MODIFICA QUI
+        logging.info(f"Richiesta a {url} - Status Code: {response.status_code}")
+        response.raise_for_status()
         return response.json()
+    # ... (il resto della gestione errori rimane uguale) ...
     except requests.exceptions.Timeout as e:
         logging.error(f"Timeout durante la richiesta a {url}: {e}")
         return None
     except requests.exceptions.HTTPError as e:
-        logging.error(f"Errore HTTP durante la richiesta a {url}: {e.response.status_code} - {e.response.text[:200]}...") # Logga codice e parte della risposta
+        logging.error(f"Errore HTTP durante la richiesta a {url}: {e.response.status_code} - {e.response.text[:200]}...")
         return None
     except requests.exceptions.ConnectionError as e:
-        logging.error(f"Errore di connessione durante la richiesta a {url}: {e}")
-        return None
+         # Controlla se l'errore è ancora SSL
+         if isinstance(e.args[0], javax.net.ssl.SSLError) or 'CERTIFICATE_VERIFY_FAILED' in str(e): # Adattato per possibile struttura errore requests/urllib3
+            logging.error(f"Errore SSL persistente con certifi durante richiesta a {url}: {e}")
+         else:
+            logging.error(f"Errore di connessione generico durante richiesta a {url}: {e}")
+         return None
     except requests.exceptions.RequestException as e:
-        # Errore generico di requests
         logging.error(f"Errore generico durante la richiesta a {url}: {e}")
         return None
     except json.JSONDecodeError as e:
-        logging.error(f"Errore nel decodificare JSON da {url}. Status: {response.status_code}. Risposta ricevuta (primi 200 char): '{response.text[:200]}...' Errore: {e}")
+        # Assicurati che la response esista prima di accedere a text
+        resp_text = response.text[:200] if response else "N/A"
+        resp_status = response.status_code if response else "N/A"
+        logging.error(f"Errore nel decodificare JSON da {url}. Status: {resp_status}. Risposta (primi 200 char): '{resp_text}...' Errore: {e}")
         return None
     except Exception as e:
-        # Cattura qualsiasi altra eccezione imprevista
-        logging.error(f"Errore imprevisto durante il fetch da {url}: {e}", exc_info=True) # Aggiunge traceback per debug
+        logging.error(f"Errore imprevisto durante il fetch da {url}: {e}", exc_info=True)
         return None
 
 def send_telegram_message(token, chat_id, text):
