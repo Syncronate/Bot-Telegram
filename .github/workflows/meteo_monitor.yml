@@ -35,6 +35,7 @@ jobs:
           # pip install -r requirements.txt
           # Altrimenti (come prima):
           pip install requests
+          pip install requests certifi
 
       - name: Run Meteo Check Script
         env:
