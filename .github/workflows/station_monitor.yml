@@ -1,0 +1,37 @@
+name: Meteo Marche Monitor - Stazioni (Orario)
+
+on:
+  schedule:
+    # Esegue ogni ora, al minuto 0
+    - cron: '0 * * * *'
+  workflow_dispatch: # Permette l'avvio manuale
+
+jobs:
+  check_stations:
+    name: Controllo Stazioni Meteo
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests # Dipendenza necessaria
+
+      - name: Run Station Check Script
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        # Assicurati che il nome file sia corretto
+        run: python station_checker.py
+
+      - name: Check script execution status
+        if: failure()
+        run: echo "Script Station Check fallito!" && exit 1
