@@ -1,293 +1,266 @@
-import gspread
-from google.oauth2.service_account import Credentials
-import telegram
+import requests
 import os
+import json
 import logging
-import json # Per caricare le soglie da JSON
 from datetime import datetime
 
-# --- CONFIGURAZIONE (LEGGE DA VARIABILI D'AMBIENTE) ---
-# Queste verranno impostate tramite i Secrets di GitHub
+# --- Configurazione ---
+# Recupera le credenziali dai secrets di GitHub Actions
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-GOOGLE_CREDENTIALS_JSON_CONTENT = os.environ.get("GOOGLE_CREDENTIALS_JSON")
-GSHEET_NAME = os.environ.get("GSHEET_NAME")
-WORKSHEET_NAME = os.environ.get("WORKSHEET_NAME")
 
-# Carica le soglie dalla variabile d'ambiente THRESHOLDS_JSON
-THRESHOLDS_JSON = os.environ.get("THRESHOLDS_JSON", '{}') # Default a JSON vuoto
-THRESHOLDS = {} # Inizializza come dizionario vuoto
+# URL API
+URL_ALLERTA_DOMANI = "https://allertameteo.regione.marche.it/o/api/allerta/get-stato-allerta-domani"
+URL_ALLERTA_OGGI = "https://allertameteo.regione.marche.it/o/api/allerta/get-stato-allerta"
+URL_STAZIONI = "https://retemir.regione.marche.it/api/stations/rt-data"
 
-# --- Setup Logging ---
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# Filtri Allerete
+AREE_INTERESSATE_ALLERTE = ["2", "4"]
+LIVELLI_ALLERTA_IGNORATI = ["green", "white"]
 
-# --- Funzioni Ausiliarie (Setup Client, Lettura GSheet, Invio Telegram) ---
-# (Queste funzioni rimangono identiche alla versione precedente per GitHub Actions)
+# Filtri Stazioni Meteo
+STAZIONI_INTERESSATE = [
+    "Misa", "Pianello di Ostra", "Nevola", "Barbara",
+    "Serra dei Conti", "Arcevia", "Corinaldo", "Ponte Garibaldi",
+]
+# Assicurati che il codice per Arcevia sia quello corretto se ci sono duplicati
+CODICE_ARCEVIA_CORRETTO = 732
 
-def check_required_env_vars():
-    """Verifica che le variabili d'ambiente essenziali siano impostate."""
-    required_vars = [
-        "TELEGRAM_BOT_TOKEN",
-        "TELEGRAM_CHAT_ID",
-        "GOOGLE_CREDENTIALS_JSON_CONTENT",
-        "GSHEET_NAME",
-        "WORKSHEET_NAME",
-        "THRESHOLDS_JSON" # Aggiunto controllo per la configurazione delle soglie
-    ]
-    missing_vars = [var for var in required_vars if not os.environ.get(var)]
-    if missing_vars:
-        logger.error(f"Errore: Variabili d'ambiente/Secrets mancanti: {', '.join(missing_vars)}")
-        return False
-    return True
+# Tipi Sensore di interesse (Assumiamo 0 = Pioggia TOT Oggi basato sull'esempio)
+# Verifica se il tipoSens 5 (Temperatura) o altri sono necessari per le soglie
+SENSORI_INTERESSATI_TIPOSENS = [0, 1, 5, 6, 9, 10, 100, 101]
 
-def load_thresholds():
-    """Carica e valida le soglie dal JSON."""
-    global THRESHOLDS # Modifica la variabile globale
+# Mappa descrizioni leggibili per tipoSens (Opzionale ma utile per i messaggi)
+DESCRIZIONI_SENSORI = {
+    0: "Pioggia TOT Oggi",
+    1: "Intensità Pioggia",
+    5: "Temperatura Aria",
+    6: "Umidità Relativa",
+    8: "Pressione Atmosferica",
+    9: "Direzione Vento",
+    10: "Velocità Vento",
+    100: "Livello Idrometrico", # Potrebbe essere specifico del fiume
+    101: "Livello Idrometrico 2", # Potrebbe essere specifico del fiume
+    7: "Radiazione Globale",
+    107: "Livello Neve"
+}
+
+# Soglie per i sensori (tipoSens -> valore soglia)
+# Esempio: Notifica se Pioggia TOT Oggi (0) > 50mm o Temperatura (5) > 35°C
+SOGLIE_SENSORI = {
+    0: 50.0,   # Pioggia TOT Oggi in mm
+    5: 35.0,   # Temperatura in °C
+    10: 15.0,  # Velocità Vento in m/s (circa 54 km/h)
+    100: 3.0,  # Livello Idrometrico in metri (ESEMPIO - da adattare!)
+    101: 2.0   # Livello Idrometrico 2 in metri (ESEMPIO - da adattare!)
+}
+
+# Configurazione Logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- Funzioni Helper ---
+
+def fetch_data(url):
+    """Recupera dati JSON da un URL."""
     try:
-        loaded_thresholds = json.loads(THRESHOLDS_JSON)
-        if not isinstance(loaded_thresholds, dict):
-            raise ValueError("THRESHOLDS_JSON non contiene un dizionario JSON valido.")
-        # Validazione aggiuntiva: assicurati che i valori siano numerici
-        valid_thresholds = {}
-        for key, value in loaded_thresholds.items():
-            try:
-                valid_thresholds[key] = float(value)
-            except (ValueError, TypeError):
-                 logger.warning(f"Valore soglia non valido per '{key}': '{value}'. Verrà ignorato.")
-        THRESHOLDS = valid_thresholds
-        if not THRESHOLDS:
-            logger.warning("Nessuna soglia valida caricata da THRESHOLDS_JSON.")
-        else:
-             logger.info(f"Soglie caricate con successo: {len(THRESHOLDS)} colonne monitorate.")
+        response = requests.get(url, timeout=30) # Timeout di 30 secondi
+        response.raise_for_status()  # Solleva eccezione per errori HTTP (4xx o 5xx)
+        return response.json()
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Errore durante la richiesta a {url}: {e}")
+        return None
+    except json.JSONDecodeError as e:
+        logging.error(f"Errore nel decodificare JSON da {url}: {e}")
+        return None
+
+def send_telegram_message(token, chat_id, text):
+    """Invia un messaggio a una chat Telegram."""
+    if not token or not chat_id:
+        logging.error("Token Telegram o Chat ID non configurati.")
+        return False
+    # Limita la lunghezza del messaggio per evitare errori API Telegram
+    max_length = 4096
+    if len(text) > max_length:
+        logging.warning(f"Messaggio troppo lungo ({len(text)} caratteri), troncato a {max_length}.")
+        text = text[:max_length - 3] + "..." # Tronca e aggiunge puntini
+
+    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    payload = {
+        'chat_id': chat_id,
+        'text': text,
+        'parse_mode': 'Markdown' # Opzionale: per usare formattazione come *bold* o _italic_
+    }
+    try:
+        response = requests.post(url, data=payload, timeout=15)
+        response.raise_for_status()
+        logging.info(f"Messaggio inviato con successo a chat ID {chat_id}")
         return True
-    except json.JSONDecodeError:
-        logger.error(f"Errore nel parsing di THRESHOLDS_JSON. Assicurati sia un JSON valido (es: {{\"ColonnaA\": 10, \"ColonnaB\": 25.5}}). Contenuto: {THRESHOLDS_JSON}")
+    except requests.exceptions.RequestException as e:
+        logging.error(f"Errore durante l'invio del messaggio Telegram: {e}")
+        # Logga anche la risposta se disponibile per debug
+        if e.response is not None:
+            logging.error(f"Risposta API Telegram: {e.response.status_code} - {e.response.text}")
         return False
-    except ValueError as e:
-        logger.error(e)
-        return False
 
-def setup_google_sheets_client_from_json():
-    """Configura e restituisce il client gspread autenticato (usando JSON content)."""
+def formatta_evento_allerta(evento_str):
+    """Formatta la stringa evento:colore in modo leggibile."""
     try:
-        scopes = ['https://www.googleapis.com/auth/spreadsheets.readonly']
-        if not GOOGLE_CREDENTIALS_JSON_CONTENT:
-             logger.error("Il contenuto delle credenziali JSON (GOOGLE_CREDENTIALS_JSON_CONTENT) è vuoto.")
-             return None
-        creds_dict = json.loads(GOOGLE_CREDENTIALS_JSON_CONTENT)
-        creds = Credentials.from_service_account_info(creds_dict, scopes=scopes)
-        client = gspread.authorize(creds)
-        logger.info("Autenticazione Google Sheets riuscita (da JSON env var).")
-        return client
-    except json.JSONDecodeError:
-        logger.error("Errore nel parsing del JSON delle credenziali Google.")
-        return None
-    except Exception as e:
-        logger.error(f"Errore durante l'autenticazione Google Sheets da JSON: {e}")
-        return None
-
-def setup_telegram_bot():
-    """Configura e restituisce l'istanza del bot Telegram."""
-    try:
-        bot = telegram.Bot(token=TELEGRAM_BOT_TOKEN)
-        logger.info(f"Bot Telegram inizializzato. ID: {bot.get_me().id}")
-        return bot
-    except Exception as e:
-        logger.error(f"Errore durante l'inizializzazione del bot Telegram: {e}")
-        return None
-
-def get_latest_row_data(gsheet_client):
-    """Recupera l'ultima riga dal foglio specificato come dizionario."""
-    try:
-        spreadsheet = gsheet_client.open(GSHEET_NAME)
-        worksheet = spreadsheet.worksheet(WORKSHEET_NAME)
-        logger.info(f"Accesso a GSheet '{GSHEET_NAME}' -> Foglio '{WORKSHEET_NAME}'")
-
-        # --- Metodo più efficiente per fogli grandi ---
-        # 1. Ottieni l'header
-        header = worksheet.row_values(1)
-        if not header:
-            logger.warning("Impossibile leggere l'header (riga 1) del foglio.")
-            return None
-
-        # 2. Trova l'ultima riga con dati (può essere lento su fogli *enormi*, ma meglio di get_all_records)
-        #    Questo approccio cerca la prima cella non vuota dall'ultima colonna verso la prima,
-        #    poi trova l'ultima riga non vuota in quella colonna. Funziona bene se i dati sono abbastanza densi.
-        #    Un'alternativa più semplice ma potenzialmente meno precisa se ci sono righe vuote alla fine:
-        #    last_row_index = len(worksheet.get_all_values(major_dimension='ROWS'))
-        #    Questo è un metodo più robusto fornito da gspread per trovare l'ultima riga popolata:
-        list_of_lists = worksheet.get_all_values() # Prende tutti i valori
-        last_row_index = len(list_of_lists) # Indice dell'ultima riga (1-based per gspread.row_values)
-
-        if last_row_index <= 1: # Solo header o foglio vuoto
-             logger.warning("Il foglio di lavoro non contiene dati oltre all'header.")
-             return None
-
-        # 3. Leggi i valori dell'ultima riga
-        latest_row_values = worksheet.row_values(last_row_index)
-
-        # 4. Combina header e valori in un dizionario
-        #    Assicurati che le liste abbiano la stessa lunghezza o gestisci la discrepanza
-        latest_row_dict = {}
-        for i, col_name in enumerate(header):
-            if i < len(latest_row_values):
-                latest_row_dict[col_name] = latest_row_values[i]
-            else:
-                latest_row_dict[col_name] = "" # O None, se preferisci
-
-        logger.debug(f"Ultima riga letta (Indice {last_row_index}): {latest_row_dict}")
-        return latest_row_dict
-        # --- Fine metodo efficiente ---
-
-        # Vecchio metodo (meno efficiente per fogli grandi):
-        # all_records = worksheet.get_all_records() # header nella prima riga
-        # if not all_records:
-        #     logger.warning("Il foglio di lavoro è vuoto.")
-        #     return None
-        # latest_row = all_records[-1]
-        # logger.debug(f"Ultima riga letta: {latest_row}")
-        # return latest_row
-
-    except gspread.exceptions.SpreadsheetNotFound:
-        logger.error(f"Errore: Spreadsheet '{GSHEET_NAME}' non trovato. Controlla il nome.")
-        return None
-    except gspread.exceptions.WorksheetNotFound:
-        logger.error(f"Errore: Foglio di lavoro '{WORKSHEET_NAME}' non trovato nello spreadsheet '{GSHEET_NAME}'.")
-        return None
-    except Exception as e:
-        logger.error(f"Errore durante la lettura da Google Sheets: {e}", exc_info=True) # Logga traceback
-        return None
-
-
-def check_thresholds(row_data, thresholds_config):
-    """Controlla i valori della riga rispetto alle soglie definite nella configurazione."""
-    alerts = []
-    if not row_data or not thresholds_config:
-        logger.info("Nessun dato di riga o nessuna soglia configurata per il controllo.")
-        return alerts
-
-    logger.info(f"Controllo soglie per {len(thresholds_config)} colonne configurate.")
-    for column_name, threshold in thresholds_config.items():
-        # Assicurati che il nome colonna esista nel GSheet (case-sensitive!)
-        if column_name not in row_data:
-            logger.warning(f"La colonna '{column_name}' definita nelle soglie non esiste nell'header del foglio. Ignorata.")
-            continue
-
-        value_str = str(row_data.get(column_name, '')).strip()
-
-        # Ignora valori vuoti o chiaramente non numerici come "N/A" prima di provare la conversione
-        if not value_str or value_str.upper() == 'N/A':
-            logger.debug(f"Valore vuoto o 'N/A' per la colonna '{column_name}'. Ignoro.")
-            continue
-
-        try:
-            # Converti in numero, gestendo la virgola come separatore decimale
-            value = float(value_str.replace(',', '.'))
-        except ValueError:
-            logger.warning(f"Valore '{value_str}' nella colonna '{column_name}' non è un numero valido dopo la pulizia. Ignoro.")
-            continue
-
-        # Controlla se il valore supera la soglia
-        if value > threshold:
-            alert_message = (
-                f"⚠️ *Allarme Soglia Superata!*\n"
-                # Metti in grassetto il nome della colonna per chiarezza
-                f"*{column_name}*: `{value}` (Soglia: `{threshold}`)"
-            )
-            alerts.append(alert_message)
-            logger.info(f"Soglia superata per '{column_name}': {value} > {threshold}")
+        nome, colore = evento_str.split(':')
+        # Mappa colori a emoji o testo (opzionale)
+        emoji_map = {
+            "yellow": "🟡",
+            "orange": "🟠",
+            "red": "🔴",
+            # "green": "🟢", # Ignorati
+            # "white": "⚪️" # Ignorati
+        }
+        # Sostituisci underscore con spazi e capitalizza
+        nome_formattato = nome.replace("_", " ").capitalize()
+        if colore in emoji_map:
+            return f"{emoji_map[colore]} {nome_formattato} ({colore})"
+        elif colore not in LIVELLI_ALLERTA_IGNORATI:
+             return f"❓ {nome_formattato} ({colore})" # Colore sconosciuto ma non ignorato
         else:
-             logger.debug(f"Valore OK per '{column_name}': {value} <= {threshold}")
+            return None # Ignora green/white
+    except ValueError:
+        return f"Evento malformato: {evento_str}" # Gestisce casi imprevisti
 
+# --- Logica Principale ---
 
-    return alerts
+def check_allerte():
+    """Controlla le API di allerta e restituisce un messaggio se ci sono allerte rilevanti."""
+    messaggi_allerta = []
+    urls_allerte = {
+        "OGGI": URL_ALLERTA_OGGI,
+        "DOMANI": URL_ALLERTA_DOMANI
+    }
 
-def send_telegram_message(bot, chat_id, message):
-    """Invia un messaggio tramite il bot Telegram."""
-    if not bot:
-        logger.error("Tentativo di inviare messaggio ma il bot non è inizializzato.")
-        return False
-    try:
-        # Limita lunghezza messaggio (Telegram ha un limite di 4096 caratteri)
-        max_len = 4090 # Lascia un po' di margine
-        if len(message) > max_len:
-            logger.warning("Messaggio troppo lungo, verrà troncato.")
-            message = message[:max_len] + "\n... (troncato)"
+    for tipo_giorno, url in urls_allerte.items():
+        logging.info(f"Controllo allerte {tipo_giorno} da {url}...")
+        data = fetch_data(url)
+        if not data:
+            messaggi_allerta.append(f"⚠️ Impossibile recuperare dati allerta {tipo_giorno}.")
+            continue
 
-        bot.send_message(chat_id=chat_id, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
-        logger.info(f"Messaggio inviato a chat ID {chat_id}.")
-        return True
-    except telegram.error.BadRequest as e:
-        logger.error(f"Errore invio messaggio Telegram (BadRequest): {e} - Controlla CHAT_ID e formattazione messaggio.")
-    except telegram.error.Unauthorized as e:
-         logger.error(f"Errore invio messaggio Telegram (Unauthorized): {e} - Controlla BOT_TOKEN o se il bot è bloccato/non aggiunto alla chat.")
-    except Exception as e:
-        logger.error(f"Errore generico invio messaggio Telegram: {e}")
-    return False
+        allerte_rilevanti_giorno = []
+        for item in data:
+            area = item.get("area")
+            eventi_str = item.get("eventi")
 
-# --- Funzione Principale ---
-def main():
-    """Funzione principale eseguita una volta per ogni run di GitHub Action."""
-    logger.info("Avvio controllo GSheet singolo...")
+            if area in AREE_INTERESSATE_ALLERTE and eventi_str:
+                eventi_list = eventi_str.split(',')
+                eventi_formattati_area = []
+                for evento in eventi_list:
+                    evento_formattato = formatta_evento_allerta(evento.strip())
+                    if evento_formattato:
+                        eventi_formattati_area.append(evento_formattato)
 
-    if not check_required_env_vars():
-        exit(1) # Esce se manca configurazione essenziale
+                if eventi_formattati_area: # Se ci sono eventi NON green/white per quest'area
+                     allerte_rilevanti_giorno.append(f"  - *Area {area}*:\n    " + "\n    ".join(eventi_formattati_area))
 
-    if not load_thresholds(): # Carica e valida le soglie all'inizio
-         logger.error("Errore nel caricamento delle soglie definite in THRESHOLDS_JSON. Il bot non può procedere correttamente.")
-         # Potresti decidere di uscire (exit(1)) o continuare senza soglie
-         # exit(1) # Scegli questa se le soglie sono obbligatorie
-
-    # Se non ci sono soglie valide, è inutile continuare? Dipende dalla logica desiderata.
-    # if not THRESHOLDS:
-    #     logger.info("Nessuna soglia valida configurata. Termino il controllo.")
-    #     exit(0) # Uscita normale, nessun lavoro da fare
-
-    gsheet_client = setup_google_sheets_client_from_json()
-    bot = setup_telegram_bot()
-
-    if not gsheet_client or not bot:
-        logger.error("Impossibile procedere: errore inizializzazione client GSheet o Bot Telegram.")
-        exit(1)
-
-    latest_row = get_latest_row_data(gsheet_client)
-
-    if latest_row:
-        # Passa il dizionario THRESHOLDS alla funzione di controllo
-        alerts = check_thresholds(latest_row, THRESHOLDS)
-
-        if alerts:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            # Costruisci il messaggio di allarme
-            alert_lines = [f"*{timestamp} - Controllo GSheet (GitHub Action)*\n"]
-            alert_lines.extend(alerts)
-
-            # Aggiungi opzionalmente l'intera riga per contesto (formattata)
-            # try:
-            #     row_details = json.dumps(latest_row, indent=2, ensure_ascii=False)
-            #     alert_lines.append(f"\n\n*Dettagli riga completa:*\n```json\n{row_details}\n```")
-            # except Exception as json_e:
-            #     logger.warning(f"Impossibile formattare i dettagli della riga come JSON: {json_e}")
-            #     alert_lines.append(f"\n\n*Dettagli riga (raw):*\n`{latest_row}`")
-
-            full_alert_message = "\n".join(alert_lines)
-
-            if not send_telegram_message(bot, TELEGRAM_CHAT_ID, full_alert_message):
-                logger.error("Fallito invio della notifica di allarme a Telegram.")
-                # Potresti uscire con errore per segnalare il fallimento nell'Action
-                # exit(1)
-            else:
-                logger.info("Notifica di allarme inviata con successo.")
+        if allerte_rilevanti_giorno:
+             messaggi_allerta.append(f"🚨 *Allerte Meteo {tipo_giorno}:*\n" + "\n".join(allerte_rilevanti_giorno))
         else:
-            logger.info("Nessuna soglia superata nell'ultima riga per le colonne monitorate.")
-    else:
-        logger.info("Nessun dato recuperato dall'ultima riga o foglio vuoto/solo header.")
+             logging.info(f"Nessuna allerta meteo rilevante trovata per {tipo_giorno} nelle aree {AREE_INTERESSATE_ALLERTE}.")
 
-    logger.info("Controllo GSheet singolo completato.")
+    return "\n\n".join(messaggi_allerta) if messaggi_allerta else ""
 
+def check_stazioni():
+    """Controlla i dati delle stazioni meteo e verifica le soglie."""
+    messaggi_soglia = []
+    logging.info(f"Controllo dati stazioni da {URL_STAZIONI}...")
+    data = fetch_data(URL_STAZIONI)
+    if not data:
+        return "⚠️ Impossibile recuperare dati stazioni meteo."
+
+    stazioni_trovate_interessanti = False
+    for stazione in data:
+        nome_stazione = stazione.get("nome", "N/A").strip()
+        codice_stazione = stazione.get("codice")
+
+        # Gestione caso speciale Arcevia e filtro per nome
+        is_arcevia = "Arcevia" in nome_stazione
+        if (is_arcevia and codice_stazione == CODICE_ARCEVIA_CORRETTO) or \
+           (not is_arcevia and nome_stazione in STAZIONI_INTERESSATE):
+
+            stazioni_trovate_interessanti = True
+            logging.debug(f"Trovata stazione di interesse: {nome_stazione} (Codice: {codice_stazione})")
+            sensori = stazione.get("analog", [])
+            if not sensori:
+                logging.debug(f"Nessun dato sensore per {nome_stazione}")
+                continue
+
+            last_update = stazione.get("lastUpdateTime", "N/A")
+
+            for sensore in sensori:
+                tipoSens = sensore.get("tipoSens")
+                if tipoSens in SENSORI_INTERESSATI_TIPOSENS:
+                    valore_str = sensore.get("valore")
+                    unmis = sensore.get("unmis", "").strip()
+                    descr_sens = sensore.get("descr", DESCRIZIONI_SENSORI.get(tipoSens, f"Sensore {tipoSens}")).strip()
+
+                    logging.debug(f"  - Sensore: {descr_sens} ({tipoSens}), Valore: {valore_str} {unmis}, Aggiorn.: {last_update}")
+
+                    # Controllo Soglie
+                    if tipoSens in SOGLIE_SENSORI:
+                        soglia = SOGLIE_SENSORI[tipoSens]
+                        try:
+                            # Gestisce valori non numerici o nulli
+                            if valore_str is not None and valore_str != "" and valore_str.lower() != 'nan':
+                                valore_num = float(valore_str)
+                                if valore_num > soglia:
+                                    msg = (f"📈 *Soglia Superata!*\n"
+                                           f"   Stazione: *{nome_stazione}*\n"
+                                           f"   Sensore: {descr_sens}\n"
+                                           f"   Valore: *{valore_num} {unmis}* (Soglia: {soglia} {unmis})\n"
+                                           f"   Ultimo Agg.: {last_update}")
+                                    messaggi_soglia.append(msg)
+                                    logging.warning(f"SOGLIA SUPERATA: {nome_stazione} - {descr_sens} = {valore_num} > {soglia}")
+                            else:
+                                logging.debug(f"Valore non numerico o assente per sensore {tipoSens} in stazione {nome_stazione}: '{valore_str}'")
+                        except (ValueError, TypeError) as e:
+                            logging.warning(f"Impossibile convertire valore '{valore_str}' a float per sensore {tipoSens} in stazione {nome_stazione}: {e}")
+
+    if not stazioni_trovate_interessanti:
+        logging.info(f"Nessuna delle stazioni di interesse ({', '.join(STAZIONI_INTERESSATE)}) trovata nei dati API.")
+    elif not messaggi_soglia:
+         logging.info("Nessuna soglia superata per le stazioni monitorate.")
+
+
+    return "\n\n".join(messaggi_soglia) if messaggi_soglia else ""
+
+
+# --- Esecuzione ---
 if __name__ == "__main__":
-    main()
+    logging.info("Avvio controllo Meteo Marche...")
+
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        logging.critical("Errore: Le variabili d'ambiente TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID sono necessarie.")
+        exit(1) # Esce con errore
+
+    # Controlla Allerete
+    messaggio_finale_allerte = check_allerte()
+
+    # Controlla Stazioni e Soglie
+    messaggio_finale_soglie = check_stazioni()
+
+    # Combina i messaggi se ci sono contenuti
+    messaggio_completo = ""
+    if messaggio_finale_allerte:
+        messaggio_completo += messaggio_finale_allerte + "\n\n" # Aggiunge separatore
+    if messaggio_finale_soglie:
+        messaggio_completo += messaggio_finale_soglie
+
+    # Invia il messaggio a Telegram solo se c'è qualcosa da riportare
+    if messaggio_completo:
+        timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        header = f"*{'='*10} Report Meteo Marche ({timestamp}) {'='*10}*\n\n"
+        footer = f"\n\n*{'='*30}*"
+        messaggio_da_inviare = header + messaggio_completo.strip() + footer
+
+        logging.info("Invio messaggio aggregato a Telegram...")
+        send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, messaggio_da_inviare)
+    else:
+        logging.info("Nessuna allerta meteo rilevante o soglia superata da notificare.")
+
+    logging.info("Controllo Meteo Marche completato.")
