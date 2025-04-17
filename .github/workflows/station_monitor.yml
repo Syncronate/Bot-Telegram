@@ -2,8 +2,8 @@ name: Meteo Marche Monitor - Stazioni (Orario)
 
 on:
   schedule:
-    # Esegue ogni ora, al minuto 0
-    - cron: '*/30 * * * *'
+    # Esegue ogni 30 minuti (ai minuti :00 e :30)
+    - cron: '*/15 * * * *'
   workflow_dispatch: # Permette l'avvio manuale
 
 jobs:
@@ -24,11 +24,20 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install requests # Dipendenza necessaria
+          # Nota: Non è necessario installare pytz o tzdata qui
+          # perché stiamo usando la variabile d'ambiente TZ del runner
+
+      # --- STEP AGGIUNTO PER IMPOSTARE IL FUSO ORARIO ---
+      - name: Set Timezone to Europe/Rome
+        run: echo "TZ=Europe/Rome" >> $GITHUB_ENV
+      # --------------------------------------------------
 
       - name: Run Station Check Script
         env:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          # La variabile TZ impostata nello step precedente sarà automaticamente
+          # disponibile per questo step e per lo script Python eseguito.
         # Assicurati che il nome file sia corretto
         run: python station_checker_full_report.py
 
