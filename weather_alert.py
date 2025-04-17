@@ -37,7 +37,7 @@ THRESHOLDS = {
     'wind_speed': 40,
     'wind_gust_10_min': 60,
     'rain_rate_mm': 10,
-    'rain_day_mm': 1
+    'rain_day_mm': 1000
 }
 # Dati da monitorare (basati sulle chiavi di THRESHOLDS)
 DATA_TO_MONITOR = list(THRESHOLDS.keys())
@@ -46,10 +46,10 @@ DATA_TO_MONITOR = list(THRESHOLDS.keys())
 # --- TRADUZIONI DEI PARAMETRI ---
 # Mappa le chiavi API (inglese) ai nomi desiderati in italiano
 TRANSLATIONS = {
-    'wind_speed': "Velocità Vento",
-    'wind_gust_10_min': "Raffica Vento (10 min)",
-    'rain_rate_mm': "Intensità Pioggia",
-    'rain_day_mm': "Pioggia Giornaliera"
+    'wind_speed': "Velocità Vento km/hr",
+    'wind_gust_10_min': "Raffica Vento km/hr (10 min)",
+    'rain_rate_mm': "Intensità Pioggia mm/hr",
+    'rain_day_mm': "Pioggia Giornaliera mm"
     # Aggiungi altre traduzioni qui se monitori più dati
 }
 # ------------------------------
