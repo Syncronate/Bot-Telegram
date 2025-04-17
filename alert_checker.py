@@ -75,16 +75,35 @@ def send_telegram_message(token, chat_id, text):
         if e.response is not None: logging.error(f"Risposta API Telegram: {e.response.status_code} - {e.response.text}")
         return False
 
+# --- Funzione Helper MODIFICATA ---
 def formatta_evento_allerta(evento_str):
-    """Formatta la stringa evento:colore in modo leggibile."""
+    """Formatta la stringa evento:colore in modo leggibile, con colori in italiano."""
     try:
         nome, colore = evento_str.split(':')
-        emoji_map = {"Gialla": "🟡", "Arancine": "🟠", "Rossa": "🔴"}
+        emoji_map = {"yellow": "🟡", "orange": "🟠", "red": "🔴"}
+        # *** MODIFICA: Aggiunto dizionario per traduzione colori ***
+        color_translation_it = {
+            "yellow": "giallo",
+            "orange": "arancione",
+            "red": "rosso"
+            # Altri colori (es. green, white) verranno lasciati in inglese se non ignorati
+        }
+
         nome_formattato = nome.replace("_", " ").capitalize()
-        if colore in emoji_map: return f"{emoji_map[colore]} {nome_formattato} ({colore})"
-        elif colore not in LIVELLI_ALLERTA_IGNORATI: return f"❓ {nome_formattato} ({colore})"
-        else: return None
-    except ValueError: return f"Evento malformato: {evento_str}"
+        # *** MODIFICA: Usa il colore tradotto se presente, altrimenti usa l'originale ***
+        colore_italiano = color_translation_it.get(colore, colore)
+
+        if colore in emoji_map:
+            # *** MODIFICA: Usa colore_italiano nella stringa finale ***
+            return f"{emoji_map[colore]} {nome_formattato} ({colore_italiano})"
+        elif colore not in LIVELLI_ALLERTA_IGNORATI:
+             # *** MODIFICA: Usa colore_italiano anche qui per coerenza ***
+            return f"❓ {nome_formattato} ({colore_italiano})"
+        else: # Livello ignorato (green, white)
+            return None # Non mostrare questi livelli
+    except ValueError:
+        logging.warning(f"Trovato evento malformato durante la formattazione: {evento_str}")
+        return f"Evento malformato: {evento_str}" # Ritorna un messaggio di errore per il debug
 
 # --- Logica Principale Solo Allerte (Invariata) ---
 
@@ -109,6 +128,7 @@ def check_allerte_principale():
             eventi_str = item.get("eventi")
             if area in AREE_INTERESSATE_ALLERTE and eventi_str:
                 eventi_list = eventi_str.split(',')
+                # Applica la formattazione (ora con traduzione italiana)
                 eventi_formattati_area = [fmt for ev in eventi_list if (fmt := formatta_evento_allerta(ev.strip()))]
                 if eventi_formattati_area:
                      allerte_rilevanti_giorno.append(f"  - *Area {area}*:\n    " + "\n    ".join(eventi_formattati_area))
@@ -127,7 +147,7 @@ def check_allerte_principale():
     else:
         return "\n\n".join(messaggi_allerta)
 
-# --- Esecuzione Script Allerte (MODIFICATA) ---
+# --- Esecuzione Script Allerte (Invariata) ---
 if __name__ == "__main__":
     logging.info("--- Avvio Controllo SOLO ALLERTE Meteo Marche ---")
 
