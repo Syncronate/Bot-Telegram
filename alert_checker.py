@@ -152,13 +152,13 @@ if __name__ == "__main__":
              logging.error(f"Errore recupero dati allerte rilevato: {messaggio_allerte}")
         else:
              # È un messaggio di allerte rilevanti
-             header = f"*{'='*5} Report SOLO ALLERTE RILEVANTI ({timestamp}) {'='*5}*\n\n"
+             header = f"*{'='*5} Report ALLERTE RILEVANTI ({timestamp}) {'='*5}*\n\n"
              messaggio_da_inviare = header + messaggio_allerte.strip() + footer
              logging.info("Trovate allerte rilevanti da notificare.")
 
     # Caso 2: messaggio_allerte è vuoto (fetch OK, nessuna allerta rilevante)
     else:
-        header = f"*{'='*5} Report SOLO ALLERTE ({timestamp}) {'='*5}*\n\n"
+        header = f"*{'='*5} Report ALLERTE ({timestamp}) {'='*5}*\n\n"
         testo_ok = (f"✅ Nessuna allerta meteo rilevante (diversa da verde/bianco) "
                     f"prevista per oggi e domani nelle aree monitorate "
                     f"({', '.join(AREE_INTERESSATE_ALLERTE)}).")
