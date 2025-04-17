@@ -63,7 +63,7 @@ SOGLIE_PER_STAZIONE = {
     "Misa": { 100: 2.0 },
     "Ponte Garibaldi": { 101: 2.2 }, # Corretto 2.0 -> 2.2 come nel primo script
     "Serra dei Conti": { 100: 1.7 }, # Corretto 1.8 -> 1.7 come nel primo script
-    #"Arcevia": { 100: 1.8 }, # Rimosso se non necessario o gestito genericamente
+    "Pianello di Ostra": { 100: 2.0 },
     # Nevola
     "Nevola": { 100: 2.0, 1: 0.25 }, # Mantenuta specifica per Intensità pioggia se serve, altrimenti verrà usata la generica
     "Passo Ripe": { 100: 1.2 }, # Aggiunta soglia Passo Ripe come nel primo script
