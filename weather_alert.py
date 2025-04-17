@@ -33,13 +33,26 @@ STATIONS_INFO = [
 # --- SOGLIE DI ALLERTA ---
 # !! PERSONALIZZA QUESTI VALORI !!
 THRESHOLDS = {
+    # Le chiavi devono corrispondere ESATTAMENTE a quelle dell'API JSON
     'wind_speed': 40,
     'wind_gust_10_min': 60,
     'rain_rate_mm': 10,
     'rain_day_mm': 1000
 }
+# Dati da monitorare (basati sulle chiavi di THRESHOLDS)
 DATA_TO_MONITOR = list(THRESHOLDS.keys())
 # ------------------------
+
+# --- TRADUZIONI DEI PARAMETRI ---
+# Mappa le chiavi API (inglese) ai nomi desiderati in italiano
+TRANSLATIONS = {
+    'wind_speed': "Velocità Vento",
+    'wind_gust_10_min': "Raffica Vento (10 min)",
+    'rain_rate_mm': "Intensità Pioggia",
+    'rain_day_mm': "Pioggia Giornaliera"
+    # Aggiungi altre traduzioni qui se monitori più dati
+}
+# ------------------------------
 
 API_BASE_URL = "https://api.weatherlink.com/v2"
 
@@ -82,7 +95,6 @@ def send_telegram_message(bot_token, chat_id, message):
     except requests.exceptions.RequestException as e:
         print(f"Errore invio messaggio Telegram: {e}")
         if e.response is not None:
-             # Stampa più dettagli sull'errore 400 Bad Request
              print(f"  Status: {e.response.status_code}, Risposta: {e.response.text}")
         return False
     except Exception as e:
@@ -91,8 +103,7 @@ def send_telegram_message(bot_token, chat_id, message):
 
 def escape_markdown(text):
     """Effettua l'escape dei caratteri speciali per MarkdownV2 di Telegram."""
-    # Lista aggiornata caratteri da documentazione + esperienza
-    escape_chars = r'_*[]()~`>#+-=|{}.!' # Tolto = da qui, lo gestiamo a parte
+    escape_chars = r'_*[]()~`>#+-=|{}.!' # Non includere '=' qui
     return ''.join(f'\\{char}' if char in escape_chars else char for char in str(text))
 
 # --- Ciclo Principale ---
@@ -103,7 +114,7 @@ alerts_to_send = []
 for station_info in STATIONS_INFO:
     station_id = station_info["id"]
     station_name = station_info["name"]
-    safe_station_name = escape_markdown(station_name)
+    safe_station_name = escape_markdown(station_name) # Nome stazione "sicuro" per Markdown
     print(f"\n---> Controllo dati per Stazione: {safe_station_name} (ID: {station_id}) <---")
     current_conditions_endpoint = f"/current/{station_id}"
 
@@ -119,23 +130,28 @@ for station_info in STATIONS_INFO:
                 if sensor_data_list and len(sensor_data_list) > 0:
                     core_data = sensor_data_list[0]
 
-                    for data_key in DATA_TO_MONITOR:
+                    for data_key in DATA_TO_MONITOR: # Itera sulle chiavi API inglesi
                         current_value = core_data.get(data_key)
                         threshold_value = THRESHOLDS.get(data_key)
 
                         if current_value is not None and threshold_value is not None:
                             try:
                                 if float(current_value) >= float(threshold_value):
-                                    # === MODIFICA QUI ===
-                                    # Aggiungi \\ prima del =
+                                    # --- MODIFICA PER TRADUZIONE ---
+                                    # Cerca la traduzione italiana, se non c'è usa la chiave inglese formattata
+                                    italian_param_name = TRANSLATIONS.get(data_key, data_key.replace('_', ' ').title())
+                                    safe_italian_param_name = escape_markdown(italian_param_name)
+                                    # ---------------------------------
+
+                                    # Costruisci il messaggio di dettaglio usando il nome italiano
                                     alert_detail = (
-                                        f"*{safe_station_name}*: "
-                                        f"{escape_markdown(data_key.replace('_', ' ').title())} \\= " # <-- AGGIUNTO \\
-                                        f"`{escape_markdown(current_value)}` "
-                                        f"\\(Soglia: `{escape_markdown(threshold_value)}`\\)"
+                                        f"*{safe_station_name}*: " # Nome stazione (già escapato)
+                                        f"{safe_italian_param_name} \\= " # Nome parametro italiano (escapato) + = escapato
+                                        f"`{escape_markdown(current_value)}` " # Valore (escapato) in formato codice
+                                        # Nota: Le unità non sono incluse, potresti aggiungerle se conosci quelle esatte
+                                        f"\\(Soglia: `{escape_markdown(threshold_value)}`\\)" # Soglia (escapata) tra parentesi escapate
                                     )
-                                    # ====================
-                                    print(f"  ALERT: {data_key} = {current_value} >= {threshold_value}")
+                                    print(f"  ALERT: {data_key} = {current_value} >= {threshold_value} -> {italian_param_name}")
                                     station_alerts.append(alert_detail)
                             except (ValueError, TypeError) as e:
                                 print(f"  Attenzione: Impossibile confrontare {data_key} = '{current_value}' con soglia {threshold_value}. Errore: {e}")
@@ -154,10 +170,10 @@ for station_info in STATIONS_INFO:
 # --- Invio Messaggio Telegram Consolidato ---
 if alerts_to_send:
     print("\n--- Soglie superate! Preparazione messaggio Telegram... ---")
+    # Titolo già in italiano
     final_message = "⚠️ *Allerta Meteo Superamento Soglie* ⚠️\n\n"
-    final_message += "\n".join(alerts_to_send)
+    final_message += "\n".join(alerts_to_send) # Aggiunge le allerte (già tradotte e formattate)
 
-    # Stampa il messaggio finale PRIMA di inviarlo (utile per debug)
     print("--- Messaggio Telegram da inviare ---")
     print(final_message)
     print("-----------------------------------")
