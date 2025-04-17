@@ -12,21 +12,21 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 URL_STAZIONI = "https://retemir.regione.marche.it/api/stations/rt-data"
 STAZIONI_INTERESSATE = [
     "Misa", "Pianello di Ostra", "Nevola", "Barbara",
-    "Serra dei Conti", "Arcevia", "Corinaldo", "Ponte Garibaldi",
+    "Serra dei Conti", "Arcevia", "Corinaldo", "Ponte Garibaldi", "Senigallia",
 ]
 CODICE_ARCEVIA_CORRETTO = 732
-SENSORI_INTERESSATI_TIPOSENS = [0, 1, 5, 6, 9, 10, 100, 101]
+SENSORI_INTERESSATI_TIPOSENS = [0, 1, 100, 101]
 DESCRIZIONI_SENSORI = {
-    0: "Pioggia TOT Oggi", 1: "Intensità Pioggia", 5: "Temperatura Aria",
+    0: "Pioggia TOT Oggi", 1: "Intensità Pioggia mm/min", 5: "Temperatura Aria",
     6: "Umidità Relativa", 8: "Pressione Atmosferica", 9: "Direzione Vento",
     10: "Velocità Vento", 100: "Livello Idrometrico", 101: "Livello Idrometrico 2",
     7: "Radiazione Globale", 107: "Livello Neve"
 }
-SOGLIE_GENERICHE = { 0: 50.0, 5: 35.0, 10: 15.0 }
+SOGLIE_GENERICHE = { 0: 50.0, 1: 0.25, 5: 35.0, 10: 15.0 }
 SOGLIE_PER_STAZIONE = {
-    "Nevola": { 100: 2.0, 0: 60.0 }, "Misa": { 100: 3.5 },
-    "Ponte Garibaldi": { 101: 1.5 }, "Arcevia": { 5: 32.0, 100: 1.8 },
-    "Serra dei Conti": { 100: 1.2 }
+    "Nevola": { 100: 2.0, 1: 0.25 }, "Misa": { 1: 0.25, 100: 2.0 },
+    "Ponte Garibaldi": { 101: 2.2 }, "Arcevia": { 1: 0.25 },
+    "Serra dei Conti": { 100: 1.7 }
 }
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
