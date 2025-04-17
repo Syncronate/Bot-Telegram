@@ -36,7 +36,7 @@ THRESHOLDS = {
     'wind_speed': 40,
     'wind_gust_10_min': 60,
     'rain_rate_mm': 10,
-    'rain_day_mm': 1
+    'rain_day_mm': 1000
 }
 DATA_TO_MONITOR = list(THRESHOLDS.keys())
 # ------------------------
