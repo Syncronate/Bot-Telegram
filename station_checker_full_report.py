@@ -22,7 +22,7 @@ DESCRIZIONI_SENSORI = {
     10: "Velocità Vento", 100: "Livello Idrometrico", 101: "Livello Idrometrico 2",
     7: "Radiazione Globale", 107: "Livello Neve"
 }
-SOGLIE_GENERICHE = { 0: 50.0, 1: 0.25, 5: 35.0, 10: 15.0 }
+SOGLIE_GENERICHE = { 0: 15.0, 1: 0.25, 5: 35.0, 10: 15.0 }
 SOGLIE_PER_STAZIONE = {
     "Nevola": { 100: 2.0, 1: 0.25 }, "Misa": { 1: 0.25, 100: 2.0 },
     "Ponte Garibaldi": { 101: 2.2 }, "Arcevia": { 1: 0.25 },
