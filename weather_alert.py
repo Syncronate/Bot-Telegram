@@ -34,10 +34,10 @@ STATIONS_INFO = [
 # !! PERSONALIZZA QUESTI VALORI !!
 THRESHOLDS = {
     # Le chiavi devono corrispondere ESATTAMENTE a quelle dell'API JSON
-    'wind_speed': 40,
-    'wind_gust_10_min': 60,
-    'rain_rate_mm': 10,
-    'rain_day_mm': 1000
+    'wind_speed': 0,
+    'wind_gust_10_min': 0,
+    'rain_rate_mm': 0,
+    'rain_day_mm': 0
 }
 # Dati da monitorare (basati sulle chiavi di THRESHOLDS)
 DATA_TO_MONITOR = list(THRESHOLDS.keys())
