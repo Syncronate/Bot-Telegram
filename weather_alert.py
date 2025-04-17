@@ -35,7 +35,7 @@ STATIONS_INFO = [
 THRESHOLDS = {
     # Le unità sono quelle fornite dall'API (controlla l'output JSON)
     # Wind speed (presumibilmente mph o nodi, verifica!)
-    'wind_speed': 40,
+    'wind_speed': 1,
     # Wind gust (presumibilmente mph o nodi, verifica!)
     'wind_gust_10_min': 60,
     # Rain rate (mm/h)
