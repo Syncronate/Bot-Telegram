@@ -171,7 +171,7 @@ for station_info in STATIONS_INFO:
 if alerts_to_send:
     print("\n--- Soglie superate! Preparazione messaggio Telegram... ---")
     # Titolo già in italiano
-    final_message = "⚠️ *Avviso Superamento Soglie* ⚠️\n\n"
+    final_message = "‼️ *Avviso Superamento Soglie* ‼️\n\n"
     final_message += "\n".join(alerts_to_send) # Aggiunge le allerte (già tradotte e formattate)
 
     print("--- Messaggio Telegram da inviare ---")
