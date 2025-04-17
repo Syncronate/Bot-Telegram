@@ -68,8 +68,8 @@ SOGLIE_PER_STAZIONE = {
     "Nevola": { 100: 2.0, 1: 0.25 }, # Mantenuta specifica per Intensità pioggia se serve, altrimenti verrà usata la generica
     "Passo Ripe": { 100: 1.2 }, # Aggiunta soglia Passo Ripe come nel primo script
     # Cesano - Aggiungere soglie se necessario
-    # "Cesano": { 100: X.X },
-    # "Foce Cesano": { 100: Y.Y },
+    "Cesano": { 100: 1.0 },
+    "Foce Cesano": { 100: 1.5 },
 }
 
 # Sensori idrometrici per cui vogliamo il trend (Aggiunto)
