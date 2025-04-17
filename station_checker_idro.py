@@ -54,7 +54,7 @@ DESCRIZIONI_SENSORI = {
 SOGLIE_GENERICHE = {  }
 SOGLIE_PER_STAZIONE = {
     "Misa": { 100: 2.0 }, "Ponte Garibaldi": { 101: 2.2 },
-    "Serra dei Conti": { 100: 1.7 }, "Nevola": { 100: 2.0 },
+    "Serra dei Conti": { 100: 1.7 }, "Nevola": { 100: 2.0 }, "Pianello di Ostra": { 100: 2.0 },
     "Passo Ripe": { 100: 1.2 }, "Cesano": { 100: 1.0 }, "Foce Cesano": { 100: 1.5 }
 }
 SENSORI_IDROMETRICI_TREND = [100, 101]
