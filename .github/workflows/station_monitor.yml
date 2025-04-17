@@ -39,7 +39,7 @@ jobs:
           # La variabile TZ impostata nello step precedente sarà automaticamente
           # disponibile per questo step e per lo script Python eseguito.
         # Assicurati che il nome file sia corretto
-        run: python station_checker.py
+        run: python station_checker_idro.py
 
       - name: Check script execution status
         if: failure()
