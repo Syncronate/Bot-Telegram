@@ -79,7 +79,7 @@ def formatta_evento_allerta(evento_str):
     """Formatta la stringa evento:colore in modo leggibile."""
     try:
         nome, colore = evento_str.split(':')
-        emoji_map = {"yellow": "🟡", "orange": "🟠", "red": "🔴"}
+        emoji_map = {"Gialla": "🟡", "Arancine": "🟠", "Rossa": "🔴"}
         nome_formattato = nome.replace("_", " ").capitalize()
         if colore in emoji_map: return f"{emoji_map[colore]} {nome_formattato} ({colore})"
         elif colore not in LIVELLI_ALLERTA_IGNORATI: return f"❓ {nome_formattato} ({colore})"
