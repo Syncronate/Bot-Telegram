@@ -4,7 +4,7 @@ on:
   schedule:
     # Esegue ogni 30 minuti (puoi personalizzare)
     # Nota: GitHub Actions può avere ritardi, non è garantito al minuto esatto.
-    - cron: '*/30 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch: # Permette l'esecuzione manuale
 
 jobs:
