@@ -9,16 +9,16 @@ import urllib3
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
+# *** MODIFICA: Rimosso URL_ALLERTA_OGGI ***
 URL_ALLERTA_DOMANI = "https://allertameteo.regione.marche.it/o/api/allerta/get-stato-allerta-domani"
-URL_ALLERTA_OGGI = "https://allertameteo.regione.marche.it/o/api/allerta/get-stato-allerta"
 
-AREE_INTERESSATE_ALLERTE = ["2", "4"]
+AREE_INTERESSATE_ALLERTE = ["2", "4"] # Esempio: ["1", "2", "3", "4", "5", "6"] per tutte
 LIVELLI_ALLERTA_IGNORATI = ["green", "white"]
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
-# --- Funzioni Helper (Invariate dalla versione precedente) ---
+# --- Funzioni Helper (Invariate dalla versione precedente, a parte formatta_evento_allerta già modificata) ---
 
 def fetch_data(url):
     """Recupera dati JSON da un URL DISABILITANDO la verifica SSL."""
@@ -75,123 +75,105 @@ def send_telegram_message(token, chat_id, text):
         if e.response is not None: logging.error(f"Risposta API Telegram: {e.response.status_code} - {e.response.text}")
         return False
 
-# --- Funzione Helper MODIFICATA ---
 def formatta_evento_allerta(evento_str):
     """Formatta la stringa evento:colore in modo leggibile, con colori in italiano."""
     try:
         nome, colore = evento_str.split(':')
         emoji_map = {"yellow": "🟡", "orange": "🟠", "red": "🔴"}
-        # *** MODIFICA: Aggiunto dizionario per traduzione colori ***
         color_translation_it = {
             "yellow": "giallo",
             "orange": "arancione",
             "red": "rosso"
-            # Altri colori (es. green, white) verranno lasciati in inglese se non ignorati
         }
-
         nome_formattato = nome.replace("_", " ").capitalize()
-        # *** MODIFICA: Usa il colore tradotto se presente, altrimenti usa l'originale ***
         colore_italiano = color_translation_it.get(colore, colore)
 
         if colore in emoji_map:
-            # *** MODIFICA: Usa colore_italiano nella stringa finale ***
             return f"{emoji_map[colore]} {nome_formattato} ({colore_italiano})"
         elif colore not in LIVELLI_ALLERTA_IGNORATI:
-             # *** MODIFICA: Usa colore_italiano anche qui per coerenza ***
             return f"❓ {nome_formattato} ({colore_italiano})"
         else: # Livello ignorato (green, white)
-            return None # Non mostrare questi livelli
+            return None
     except ValueError:
         logging.warning(f"Trovato evento malformato durante la formattazione: {evento_str}")
-        return f"Evento malformato: {evento_str}" # Ritorna un messaggio di errore per il debug
+        return f"Evento malformato: {evento_str}"
 
-# --- Logica Principale Solo Allerte (Invariata) ---
+# --- Logica Principale Solo Allerte (MODIFICATA) ---
 
-def check_allerte_principale():
-    """Controlla le API di allerta e restituisce un messaggio se ci sono allerte rilevanti o errore fetch."""
-    messaggi_allerta = []
-    urls_allerte = {"OGGI": URL_ALLERTA_OGGI, "DOMANI": URL_ALLERTA_DOMANI}
-    fetch_fallito = False # Flag per tracciare fallimenti fetch
+def check_allerte_domani():
+    """Controlla le API di allerta per DOMANI e restituisce un messaggio se ci sono allerte rilevanti o errore fetch."""
+    messaggi_allerta_domani = []
+    url = URL_ALLERTA_DOMANI
+    tipo_giorno = "DOMANI" # Fisso perché controlliamo solo domani
 
-    for tipo_giorno, url in urls_allerte.items():
-        logging.info(f"Controllo allerte {tipo_giorno} da {url}...")
-        data = fetch_data(url)
-        if data is None:
-            messaggi_allerta.append(f"⚠️ Impossibile recuperare dati allerta {tipo_giorno}.")
-            fetch_fallito = True # Segna che almeno un fetch è fallito
-            continue # Passa al prossimo giorno
+    logging.info(f"Controllo allerte {tipo_giorno} da {url}...")
+    data = fetch_data(url)
 
-        # Se il fetch è riuscito, processa i dati
-        allerte_rilevanti_giorno = []
-        for item in data:
-            area = item.get("area")
-            eventi_str = item.get("eventi")
-            if area in AREE_INTERESSATE_ALLERTE and eventi_str:
-                eventi_list = eventi_str.split(',')
-                # Applica la formattazione (ora con traduzione italiana)
-                eventi_formattati_area = [fmt for ev in eventi_list if (fmt := formatta_evento_allerta(ev.strip()))]
-                if eventi_formattati_area:
-                     allerte_rilevanti_giorno.append(f"  - *Area {area}*:\n    " + "\n    ".join(eventi_formattati_area))
+    if data is None:
+        # Restituisce solo il messaggio di errore per domani
+        return f"⚠️ Impossibile recuperare dati allerta {tipo_giorno} da {URL_ALLERTA_DOMANI}."
 
-        if allerte_rilevanti_giorno:
-             messaggi_allerta.append(f"🚨 *Allerte Meteo RILEVANTI {tipo_giorno}:*\n" + "\n".join(allerte_rilevanti_giorno))
-        # Non aggiungiamo nulla se non ci sono allerte rilevanti per questo giorno
+    # Se il fetch è riuscito, processa i dati
+    allerte_rilevanti_giorno = []
+    for item in data:
+        area = item.get("area")
+        eventi_str = item.get("eventi")
+        if area in AREE_INTERESSATE_ALLERTE and eventi_str:
+            eventi_list = eventi_str.split(',')
+            eventi_formattati_area = [fmt for ev in eventi_list if (fmt := formatta_evento_allerta(ev.strip()))]
+            if eventi_formattati_area:
+                 allerte_rilevanti_giorno.append(f"  - *Area {area}*:\n    " + "\n    ".join(eventi_formattati_area))
 
-    # Se c'è stato un fallimento nel fetch, restituisci solo i messaggi di errore/allerta
-    if fetch_fallito:
-        return "\n\n".join(messaggi_allerta) # Conterrà gli errori e eventuali allerte dell'altro giorno
-    # Se non ci sono stati fallimenti e non ci sono messaggi di allerta rilevanti, restituisci stringa vuota
-    elif not messaggi_allerta:
+    if allerte_rilevanti_giorno:
+         messaggi_allerta_domani.append(f"🚨 *Allerte Meteo RILEVANTI per {tipo_giorno}:*\n" + "\n".join(allerte_rilevanti_giorno))
+    
+    # Se non ci sono allerte rilevanti, restituisce stringa vuota
+    # Altrimenti, restituisce i messaggi di allerta per domani
+    if not messaggi_allerta_domani:
         return ""
-    # Altrimenti (nessun fallimento, allerte rilevanti trovate), restituisci i messaggi di allerta
     else:
-        return "\n\n".join(messaggi_allerta)
+        return "\n\n".join(messaggi_allerta_domani)
 
-# --- Esecuzione Script Allerte (Invariata) ---
+# --- Esecuzione Script Allerte (MODIFICATA) ---
 if __name__ == "__main__":
-    logging.info("--- Avvio Controllo SOLO ALLERTE Meteo Marche ---")
+    logging.info("--- Avvio Controllo ALLERTE Meteo Marche per DOMANI ---")
 
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
         logging.critical("Errore: Le variabili d'ambiente TELEGRAM_BOT_TOKEN e TELEGRAM_CHAT_ID sono necessarie.")
         exit(1)
 
-    # Esegui il check
-    messaggio_allerte = check_allerte_principale()
+    # Esegui il check solo per domani
+    messaggio_allerte = check_allerte_domani() # Modificata chiamata funzione
 
-    # Prepara il messaggio finale per Telegram
     messaggio_da_inviare = ""
     timestamp = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-    footer = f"\n\n*{'='*30}*" # Footer comune
+    footer = f"\n\n*{'='*30}*"
 
-    # Caso 1: Ci sono messaggi (allerte rilevanti o errori fetch)
+    # Caso 1: Ci sono messaggi (allerte rilevanti per domani o errore fetch)
     if messaggio_allerte:
-        # Controlla se è un messaggio di errore fetch (contiene l'emoji ⚠️)
-        if "⚠️" in messaggio_allerte:
-             header = f"*{'='*5} ERRORE Recupero Allerte ({timestamp}) {'='*5}*\n\n"
+        if "⚠️" in messaggio_allerte: # Indica errore fetch
+             header = f"*{'='*5} ERRORE Recupero Allerte DOMANI ({timestamp}) {'='*5}*\n\n"
              messaggio_da_inviare = header + messaggio_allerte.strip() + footer
-             logging.error(f"Errore recupero dati allerte rilevato: {messaggio_allerte}")
-        else:
-             # È un messaggio di allerte rilevanti
-             header = f"*{'='*5} Report ALLERTE RILEVANTI ({timestamp}) {'='*5}*\n\n"
+             logging.error(f"Errore recupero dati allerte DOMANI rilevato: {messaggio_allerte}")
+        else: # Indica allerte rilevanti per domani
+             header = f"*{'='*5} Report ALLERTE RILEVANTI DOMANI ({timestamp}) {'='*5}*\n\n"
              messaggio_da_inviare = header + messaggio_allerte.strip() + footer
-             logging.info("Trovate allerte rilevanti da notificare.")
+             logging.info("Trovate allerte rilevanti per DOMANI da notificare.")
 
-    # Caso 2: messaggio_allerte è vuoto (fetch OK, nessuna allerta rilevante)
+    # Caso 2: messaggio_allerte è vuoto (fetch OK, nessuna allerta rilevante per domani)
     else:
-        header = f"*{'='*5} Report ALLERTE ({timestamp}) {'='*5}*\n\n"
+        header = f"*{'='*5} Report ALLERTE DOMANI ({timestamp}) {'='*5}*\n\n"
+        # *** MODIFICA: Aggiornato messaggio "nessuna allerta" ***
         testo_ok = (f"✅ Nessuna allerta meteo rilevante (diversa da verde/bianco) "
-                    f"prevista per oggi e domani nelle aree monitorate "
+                    f"prevista per DOMANI nelle aree monitorate "
                     f"({', '.join(AREE_INTERESSATE_ALLERTE)}).")
         messaggio_da_inviare = header + testo_ok + footer
-        logging.info("Nessuna allerta meteo rilevante trovata (fetch OK). Invio messaggio di stato OK.")
+        logging.info("Nessuna allerta meteo rilevante per DOMANI trovata (fetch OK). Invio messaggio di stato OK.")
 
-    # Invia il messaggio preparato (errore, allerta, o "tutto ok")
-    # Il controllo if messaggio_da_inviare previene invii se per qualche motivo non è stato preparato
     if messaggio_da_inviare:
         logging.info("Invio messaggio stato allerte a Telegram...")
         send_telegram_message(TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, messaggio_da_inviare)
     else:
-         # Questo non dovrebbe accadere con la logica attuale, ma è una sicurezza
          logging.warning("Nessun messaggio da inviare è stato preparato per Telegram.")
 
-    logging.info("--- Controllo SOLO ALLERTE Meteo Marche completato ---")
+    logging.info("--- Controllo ALLERTE Meteo Marche per DOMANI completato ---")
